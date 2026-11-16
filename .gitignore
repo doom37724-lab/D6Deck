@@ -8,6 +8,11 @@ d6deck.stop
 d6deck.reload
 screensaver.*
 
+# Exe build output
+build/
+dist/
+*.spec
+
 # Old copies and Python cache
 backup-before-redesign/
 __pycache__/

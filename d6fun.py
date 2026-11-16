@@ -17,6 +17,7 @@ import math
 import os
 import random
 import struct
+import sys
 import tempfile
 import time
 import wave
@@ -27,7 +28,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import d6look as look
 
-BASE = Path(__file__).resolve().parent   # the app folder (where screensaver.gif would be)
+BASE = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent  # app folder (where screensaver.gif would be)
 COLS, ROWS, NKEYS = 5, 3, 15
 ALL_KEYS = range(1, NKEYS + 1)
 

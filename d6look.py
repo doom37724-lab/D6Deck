@@ -17,6 +17,7 @@ import colorsys
 import hashlib
 import io
 import math
+import sys
 import time
 from datetime import datetime
 from functools import lru_cache
@@ -25,7 +26,7 @@ from types import SimpleNamespace
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
 COLS, ROWS, NKEYS = 5, 3, 15
 LANCZOS = Image.Resampling.LANCZOS
 BICUBIC = Image.Resampling.BICUBIC

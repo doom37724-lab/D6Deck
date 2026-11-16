@@ -65,8 +65,11 @@ PKT = 512
 COLS, ROWS, NKEYS = 5, 3, 15
 MIN_BRIGHTNESS = 10
 
-SCRIPT = Path(__file__).resolve()
-BASE = SCRIPT.parent
+FROZEN = getattr(sys, "frozen", False)  # True when running as D6Deck.exe
+SCRIPT = Path(sys.executable if FROZEN else __file__).resolve()
+BASE = SCRIPT.parent  # the app folder: your buttons, settings and screen saver live here
+if FROZEN and sys.stdout is None:  # the .exe has no console window
+    sys.stdout = sys.stderr = open(os.devnull, "w")
 CONFIG_PATH = BASE / "config.json"
 BUTTONS_PATH = BASE / "buttons.json"
 STATE_PATH = BASE / "state.json"
@@ -77,7 +80,7 @@ MUTEX_NAME = "Local\\d6deck_single_instance"
 
 DEFAULT_CONFIG = {
     "brightness": 70,
-    "image": {"size": 85, "rotate": 90, "flip": False},
+    "image": {"size": 85, "rotate": 180, "flip": False},  # the D6 shows pictures upside down
     "key_map": {},       # raw key code -> position 1..15 (filled by `learn`)
     "display_map": {},   # optional manual override: position -> screen slot
     "flip_rows": True,   # D6 screens are numbered bottom row first; this fixes it
@@ -1296,7 +1299,10 @@ def is_running():
 
 def spawn_background(*extra):
     flags = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
-    subprocess.Popen([str(pyw_path()), str(SCRIPT), "run", *extra], cwd=str(BASE),
+    # The .exe unpacks itself to a temp folder; the background copy must get its own one,
+    # because this copy's folder is deleted when it closes.
+    env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+    subprocess.Popen([*self_cmd(), "run", *extra], cwd=str(BASE), env=env,
                      creationflags=flags if os.name == "nt" else 0,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, close_fds=True)
@@ -1359,6 +1365,11 @@ def pyw_path():
     return w if w.exists() else exe
 
 
+def self_cmd():
+    """How to start this app again without a console: D6Deck.exe, or pythonw d6deck.py."""
+    return [str(SCRIPT)] if FROZEN else [str(pyw_path()), str(SCRIPT)]
+
+
 def startup_vbs_path():
     appdata = os.environ.get("APPDATA")
     if not appdata:
@@ -1368,9 +1379,10 @@ def startup_vbs_path():
 
 
 def cmd_install_startup(cfg, args):
+    run = " ".join(f'""{c}""' for c in self_cmd())
     vbs = ('Set sh = CreateObject("WScript.Shell")\r\n'
            f'sh.CurrentDirectory = "{BASE}"\r\n'
-           f'sh.Run """{pyw_path()}"" ""{SCRIPT}"" run", 0, False\r\n')
+           f'sh.Run "{run} run", 0, False\r\n')
     path = startup_vbs_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(vbs, encoding="mbcs" if os.name == "nt" else "utf-8")
@@ -1456,8 +1468,10 @@ def make_shortcut(path, args, description):
           "$s.TargetPath = $env:D6_EXE; $s.Arguments = $env:D6_ARGS; "
           "$s.WorkingDirectory = $env:D6_DIR; $s.IconLocation = $env:D6_ICO; "
           "$s.Description = $env:D6_DESC; $s.Save()")
-    env = {**os.environ, "D6_LNK": str(path), "D6_EXE": str(pyw_path()),
-           "D6_ARGS": f'"{SCRIPT}" {args}', "D6_DIR": str(BASE), "D6_ICO": f"{ICON_PATH},0",
+    exe, *pre = self_cmd()
+    env = {**os.environ, "D6_LNK": str(path), "D6_EXE": exe,
+           "D6_ARGS": " ".join([f'"{a}"' for a in pre] + [args]), "D6_DIR": str(BASE),
+           "D6_ICO": f"{SCRIPT if FROZEN else ICON_PATH},0",
            "D6_DESC": description}
     subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], env=env,
                    check=True, capture_output=True, creationflags=0x08000000)
@@ -1705,7 +1719,8 @@ COMMANDS = {
 
 def main():
     p = argparse.ArgumentParser(description="Local controller app for Fifine D6")
-    p.add_argument("command", choices=list(COMMANDS))
+    p.add_argument("command", choices=list(COMMANDS), nargs="?", default="ui",
+                   help="what to do (no command = open the settings window)")
     p.add_argument("--debug", action="store_true", help="print raw packets")
     p.add_argument("--active", action="store_true",
                    help="probe: send wake-up + test images first")

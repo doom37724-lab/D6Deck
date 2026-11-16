@@ -32,7 +32,20 @@ does, then press **Save to deck**.
   picks the deck back up by itself.
 - **Live reload:** changes from the settings window show up on the deck right away.
 
-## Install (Windows 10/11)
+## Download (easiest – no Python needed)
+
+1. Go to [**Releases**](../../releases/latest) and download **`D6Deck.exe`**.
+2. Make a folder for it (for example `Documents\D6Deck`) and put the exe there. Your buttons and
+   settings get saved in that same folder.
+3. Double-click **D6Deck.exe**. The settings window opens. Click **Start** in the top right.
+
+Windows may show "Windows protected your PC" because the exe isn't signed by a paid
+certificate. Click **More info → Run anyway**. The full source code is right here if you want to
+check it or build it yourself.
+
+Close the official Fifine software first, because only one app can talk to the D6 at a time.
+
+## Install from source (Windows 10/11)
 
 1. Install [Python 3](https://www.python.org/downloads/) and tick **"Add python.exe to PATH"**.
 2. Download this project (green **Code** button → **Download ZIP**) and unzip it anywhere.
@@ -40,7 +53,7 @@ does, then press **Save to deck**.
    your Desktop.
 4. Plug in your D6 and open **D6Deck** from the Desktop. Click **Start** in the top right.
 
-Close the official Fifine software first, because only one app can talk to the D6 at a time.
+To build the exe yourself: `py -m pip install pyinstaller`, then run `build_exe.bat`.
 
 ### Discord mute key
 
