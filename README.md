@@ -43,7 +43,8 @@ Windows may show "Windows protected your PC" because the exe isn't signed by a p
 certificate. Click **More info → Run anyway**. The full source code is right here if you want to
 check it or build it yourself.
 
-Close the official Fifine software first, because only one app can talk to the D6 at a time.
+> **Tip:** close the official Fifine software first, because only one app can talk to the D6 at a
+> time. To make D6Deck start with Windows, turn it on in the **Settings** tab of the app.
 
 ## Install from source (Windows 10/11)
 
@@ -55,12 +56,14 @@ Close the official Fifine software first, because only one app can talk to the D
 
 To build the exe yourself: `py -m pip install pyinstaller`, then run `build_exe.bat`.
 
-### Discord mute key
+## Discord mute key
 
 Discord doesn't let other apps mute it directly, so the key presses a shortcut. In Discord open
 **Settings → Keybinds**, add **Toggle Mute** and set it to `Ctrl + Shift + Alt + M`.
 
 ## Command line (optional)
+
+These work with `D6Deck.exe` too, for example `D6Deck.exe start`.
 
 ```
 py d6deck.py ui               open the settings window
@@ -80,6 +83,8 @@ py d6deck.py check            test volume + Spotify info without the deck
 | `d6fun.py` | Screen savers, games and toys |
 | `d6ui.py` | The settings window |
 | `d6layout.py` | The default buttons for new installs |
+| `install.bat` | One-click setup when running from source |
+| `build_exe.bat` | Builds `D6Deck.exe` yourself |
 
 Your own setup (`buttons.json`, `config.json`, `state.json`, your screen saver picture) is created
 next to these files on first run and is never uploaded anywhere.
@@ -88,5 +93,6 @@ next to these files on first run and is never uploaded anywhere.
 
 D6Deck is open source under the [MIT License](LICENSE): use it, change it, share it.
 Ideas, bug reports and improvements are welcome. Open an issue or a pull request.
+Found a security problem? Please report it privately, see [SECURITY.md](SECURITY.md).
 
 D6Deck is a fan project and is not made by or connected to Fifine.
