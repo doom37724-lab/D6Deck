@@ -1,0 +1,14 @@
+# Your own setup and data (made automatically on first run)
+buttons.json
+buttons.backup.json
+config.json
+state.json
+d6deck.log
+d6deck.stop
+d6deck.reload
+screensaver.*
+
+# Old copies and Python cache
+backup-before-redesign/
+__pycache__/
+*.pyc
