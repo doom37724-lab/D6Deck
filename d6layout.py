@@ -103,7 +103,25 @@ PAGE3 = {
            "action": {"type": "game", "name": "party"}},
 }
 
-PAGES = [PAGE1, PAGE2, PAGE3]
+# Page 4: Obsidian notes. Uses the vault Obsidian last had open (set "vault" to pick another).
+PAGE4 = {
+    "1": {"label": "Obsidian", "icon": "library", "color": "#5b3fb5",
+          "action": {"type": "obsidian", "do": "open"}},
+    "2": {"label": "Today", "icon": "calendar", "color": "#7c5cdb",
+          "action": {"type": "obsidian", "do": "daily"}},
+    "3": {"widget": "clock", "color": "#1c2430"},
+    "4": {"label": "New Note", "icon": "edit", "color": "#2f7d6d",
+          "action": {"type": "obsidian", "do": "new"}},
+    "5": {"label": "Search", "icon": "search", "color": "#1b6ac9",
+          "action": {"type": "obsidian", "do": "search"}},
+    "6": {"label": "Clip It", "icon": "paste", "color": "#a35a00",
+          "action": {"type": "obsidian", "do": "clip"}},
+    "7": {"label": "Inbox", "icon": "mail", "color": "#3a4a8c",
+          "action": {"type": "obsidian", "do": "inbox"}},
+    "8": PAGE_KEY,
+}
+
+PAGES = [PAGE1, PAGE2, PAGE3, PAGE4]
 
 # Settings people can change from the settings app (and their starting values).
 DEFAULT_SETTINGS = {

@@ -542,6 +542,12 @@ _ICON_TABLE = {
     "arrow_left": (0xE72B, "Arrow left"),
     "chevron_right": (0xE76C, "Chevron right"),
     "chevron_left": (0xE76B, "Chevron left"),
+    "search": (0xE721, "Search"),
+    "document": (0xE8A5, "Document"),
+    "edit": (0xE70F, "Pencil"),
+    "paste": (0xE77F, "Paste"),
+    "library": (0xE8F1, "Books"),
+    "mail": (0xE715, "Envelope"),
 }
 ICONS = {name: desc for name, (_, desc) in _ICON_TABLE.items()}
 

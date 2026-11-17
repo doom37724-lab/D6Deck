@@ -61,6 +61,7 @@ ACTIONS = [
     ("mute", "Mute / unmute the PC"),
     ("previous_song", "Spotify: previous song"),
     ("spotify_like", "Spotify: like the current song"),
+    ("obsidian", "Obsidian: notes"),
     ("page", "Go to another page"),
     ("brightness", "Deck brightness up / down"),
     ("sleep", "Screen off (shows the screen saver)"),
@@ -76,7 +77,12 @@ ACTIONS = [
 # The fields a freshly chosen action starts with.
 NEW_ACTION = {"launch": {"target": ""}, "url": {"target": "https://"}, "launch_admin": {"target": ""},
               "hotkey": {"target": ""}, "text": {"target": ""}, "command": {"target": ""},
-              "volume": {"delta": 4}, "brightness": {"delta": 10}, "page": {"to": "next"}}
+              "volume": {"delta": 4}, "brightness": {"delta": 10}, "page": {"to": "next"},
+              "obsidian": {"do": "open"}}
+# What an Obsidian key can do (the same list as d6deck.OBSIDIAN_DO).
+OBSIDIAN_DO = [("open", "Open the vault"), ("daily", "Open today's daily note"),
+               ("new", "Make a new note"), ("search", "Search the vault"),
+               ("inbox", "Open the Inbox note"), ("clip", "Add the copied text to the Inbox")]
 MEDIA_KEYS = [("media_play_pause", "Play / pause"), ("media_next", "Next song"),
               ("media_previous", "Previous song"), ("media_volume_up", "Volume up"),
               ("media_volume_down", "Volume down"), ("media_volume_mute", "Mute")]
@@ -150,6 +156,11 @@ def clean_action(action):
                 a["repeat"] = whole_number(a["repeat"], 1, 50, "How many times to press")
     elif kind in ("game", "toy"):
         a["name"] = str(a.get("name", ""))
+    elif kind == "obsidian":
+        a["do"] = a.get("do") if a.get("do") in dict(OBSIDIAN_DO) else "open"
+        a["vault"] = str(a.get("vault", "")).strip()
+        if not a["vault"]:
+            a.pop("vault")
     return a
 
 
@@ -2015,6 +2026,24 @@ class Window:
             self._combo(box, labels, ids.index(a.get("name", "")), lambda i: self.set_act("", "name", ids[i])).pack(fill="x")
             if t == "game":
                 self._hint(box, "In every game the bottom-right key is Exit.")
+        elif t == "obsidian":
+            ids = [i for i, _ in OBSIDIAN_DO]
+            do = a.get("do") if a.get("do") in ids else "open"
+            self._field(box, "What to do")
+            self._combo(box, [n for _, n in OBSIDIAN_DO], ids.index(do),
+                        lambda i: self.set_act("", "do", ids[i])).pack(fill="x")
+            var = text_field("Vault folder (leave empty for the one Obsidian last had open)", "vault")
+            row = tk.Frame(box, bg=CARD2)
+            row.pack(fill="x", pady=(8, 0))
+
+            def pick_vault():
+                path = filedialog.askdirectory(parent=self.root, title="Choose your Obsidian vault folder")
+                if path:
+                    var.set(os.path.normpath(path))
+            Btn(row, "Choose a folder…", pick_vault).pack(side="left")
+            self._hint(box, "Daily notes go in a “Daily” folder and new notes in “Inbox”. "
+                            "“Add the copied text” puts whatever you copied (Ctrl+C) at the end of Inbox.md "
+                            "without opening Obsidian.")
         elif t in ("previous_song", "spotify_like"):
             self._hint(box, "Works with the Spotify app on this PC.")
         elif t == "sleep":

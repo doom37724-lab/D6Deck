@@ -761,9 +761,128 @@ def launch_admin(target, args=""):
         raise RuntimeError("admin launch cancelled" if r == 5 else f"ShellExecute error {r}")
 
 
+# ------------------------------------------------------------------ Obsidian
+# What an "obsidian" key can do: {"type": "obsidian", "do": <one of these>}.
+# "vault" (optional) is the vault folder; empty = the vault Obsidian last had open.
+OBSIDIAN_DO = {
+    "open": "Open the vault",
+    "daily": "Open today's daily note",
+    "new": "Make a new note",
+    "search": "Search the vault",
+    "inbox": "Open the Inbox note",
+    "clip": "Add the copied text to the Inbox",
+}
+
+
+def obsidian_vaults():
+    """Vaults Obsidian knows about, as [(id, folder, was_open)], newest first."""
+    try:
+        data = json.loads(Path(os.path.expandvars(r"%APPDATA%\obsidian\obsidian.json")).read_text("utf-8"))
+        vaults = data.get("vaults", {})
+    except (OSError, ValueError, AttributeError):
+        return []
+    rows = [(vid, v.get("path", ""), bool(v.get("open")), v.get("ts", 0))
+            for vid, v in vaults.items() if isinstance(v, dict) and v.get("path")]
+    rows.sort(key=lambda r: (r[2], r[3]), reverse=True)
+    return [(vid, path, was_open) for vid, path, was_open, _ in rows]
+
+
+def obsidian_vault(folder=""):
+    """(vault id or None, vault folder) to use."""
+    vaults = obsidian_vaults()
+    if folder:
+        want = os.path.normcase(os.path.normpath(os.path.expandvars(folder)))
+        for vid, path, _ in vaults:
+            if os.path.normcase(os.path.normpath(path)) == want:
+                return vid, path
+        return None, os.path.expandvars(folder)
+    if not vaults:
+        raise RuntimeError("no Obsidian vault found - open Obsidian once first")
+    return vaults[0][0], vaults[0][1]
+
+
+def obsidian_uri(action, **params):
+    from urllib.parse import quote
+    query = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items() if v is not None)
+    return f"obsidian://{action}" + (f"?{query}" if query else "")
+
+
+def read_clipboard_text():
+    """The text on the Windows clipboard ("" if there is none)."""
+    import ctypes
+    from ctypes import wintypes
+    u, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+    u.GetClipboardData.restype = wintypes.HANDLE
+    k32.GlobalLock.restype = ctypes.c_void_p
+    k32.GlobalLock.argtypes = k32.GlobalUnlock.argtypes = [wintypes.HANDLE]
+    for _ in range(10):  # another app may be holding the clipboard for a moment
+        if u.OpenClipboard(None):
+            break
+        time.sleep(0.03)
+    else:
+        raise RuntimeError("the clipboard is busy")
+    try:
+        h = u.GetClipboardData(13)  # CF_UNICODETEXT
+        if not h:
+            return ""
+        p = k32.GlobalLock(h)
+        try:
+            return ctypes.wstring_at(p) if p else ""
+        finally:
+            k32.GlobalUnlock(h)
+    finally:
+        u.CloseClipboard()
+
+
+def obsidian_note(folder, rel, first_text=""):
+    """Make sure the note `rel` (inside the vault) exists. Returns its full path."""
+    path = Path(folder) / rel
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(first_text, encoding="utf-8")
+    return path
+
+
+def obsidian(a):
+    what = a.get("do", "open")
+    vid, folder = obsidian_vault(a.get("vault", ""))
+    vault = vid or Path(folder).name
+    now = datetime.now()
+    if what == "open":
+        launch(obsidian_uri("open", vault=vault))
+    elif what == "search":
+        launch(obsidian_uri("search", vault=vault))
+    elif what in ("daily", "new", "inbox"):
+        if what == "daily":
+            note = obsidian_note(folder, Path("Daily") / f"{now:%Y-%m-%d}.md",
+                                 f"# {now:%A %d %B %Y}\n\n")
+        elif what == "new":
+            note = obsidian_note(folder, Path("Inbox") / f"Note {now:%Y-%m-%d %H%M%S}.md")
+        else:
+            note = obsidian_note(folder, "Inbox.md", "# Inbox\n\n")
+        launch(obsidian_uri("open", path=str(note)))
+    elif what == "clip":
+        text = read_clipboard_text().strip()
+        if not text:
+            raise RuntimeError("nothing copied - copy some text first")
+        note = obsidian_note(folder, "Inbox.md", "# Inbox\n\n")
+        lines = text.splitlines()
+        entry = f"- {now:%Y-%m-%d %H:%M} {lines[0]}\n" + "".join(f"  {ln}\n" for ln in lines[1:])
+        old = note.read_text(encoding="utf-8")
+        if old and not old.endswith("\n"):
+            entry = "\n" + entry
+        with open(note, "a", encoding="utf-8") as f:
+            f.write(entry)
+        log(f"Clipped {len(text)} characters to {note}")
+    else:
+        raise RuntimeError(f"unknown Obsidian action {what!r}")
+
+
 def do_action(a):
     t, v = a.get("type"), a.get("target", "")
-    if t == "launch":
+    if t == "obsidian":
+        obsidian(a)
+    elif t == "launch":
         launch(v, a.get("fallbacks", []))
     elif t == "launch_admin":
         launch_admin(v, a.get("args", ""))
@@ -1215,7 +1334,7 @@ class Session:
             log(f"Key {pos} ({k.get('label') or k.get('widget')}) failed: {e}")
         if not ok:  # e.g. you said No to the admin prompt
             self.flash(pos, self.relabeled(k, "Failed", "#555555"), 1.5)
-        elif t == "spotify_like":
+        elif t == "spotify_like" or (t == "obsidian" and a.get("do") == "clip"):
             self.flash(pos, self.relabeled(k, "Done!"), 1.5)
         elif t == "previous_song":  # a "previous" icon over the cover
             self.flash(pos, look.icon_over(self.normal.get(pos) or self.picture(pos), "prev",
