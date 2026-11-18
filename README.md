@@ -21,6 +21,10 @@ does, then press **Save to deck**.
   file explorer, key brightness, screen off, show desktop, lock PC.
 - **Page 3 – Fun:** live CPU and RAM meters, stopwatch, theme switcher, and games:
   Whack-a-mole, Simon, Lights Out, Reaction test, Memory, Dice, Coin flip, 8-Ball, Party mode.
+- **Page 4 – Notes & gaming:** Obsidian keys (open vault, today's note, new note, search, Inbox,
+  Clip It) and **Game Mode**: press twice to close memory-hungry apps before you play.
+- **Doesn't freeze when the PC turns off:** the D6 is put to sleep on shutdown and sleep.
+- **Picture for when the PC is off:** save your own still picture inside the D6 itself.
 - **Smooth animations** on every press and page change.
 - **4 looks:** Neon, Vivid, Mono and Classic.
 - **Screen saver:** "Screen Off" plays a screen saver. Use one of the built-in ones, or your own
@@ -72,7 +76,14 @@ py d6deck.py stop / restart
 py d6deck.py install-startup  start with Windows
 py d6deck.py shortcuts        make Desktop icons
 py d6deck.py check            test volume + Spotify info without the deck
+py d6deck.py offscreen PIC    save a still picture in the D6 for when the PC is off
+py d6deck.py pretend-off      test the "PC is shutting down" handling
+py d6deck.py --version        show which version you have
 ```
+
+## What's new
+
+See [CHANGELOG.md](CHANGELOG.md) for everything added, fixed and removed in each version.
 
 ## Files
 
@@ -85,6 +96,7 @@ py d6deck.py check            test volume + Spotify info without the deck
 | `d6layout.py` | The default buttons for new installs |
 | `install.bat` | One-click setup when running from source |
 | `build_exe.bat` | Builds `D6Deck.exe` yourself |
+| `CHANGELOG.md` | What changed in each version |
 
 Your own setup (`buttons.json`, `config.json`, `state.json`, your screen saver picture) is created
 next to these files on first run and is never uploaded anywhere.

@@ -81,6 +81,7 @@ OFFSCREEN_DONE_PATH = BASE / "d6deck.offscreen.done"  # the answer: "ok" or "err
 OFFSCREEN_W, OFFSCREEN_H = 800, 480
 LOG_PATH = BASE / "d6deck.log"
 MUTEX_NAME = "Local\\d6deck_single_instance"
+VERSION = "1.2.0"  # also update CHANGELOG.md when this changes
 
 DEFAULT_CONFIG = {
     "brightness": 70,
@@ -1737,7 +1738,7 @@ def cmd_run(cfg, args):
     STOP_PATH.unlink(missing_ok=True)
     RELOAD_PATH.unlink(missing_ok=True)
     PRETEND_OFF_PATH.unlink(missing_ok=True)
-    log("d6deck started")
+    log(f"d6deck {VERSION} started")
     global POWER
     if os.name == "nt" and POWER is None:
         POWER = PowerWatcher()
@@ -2219,6 +2220,7 @@ COMMANDS = {
 
 def main():
     p = argparse.ArgumentParser(description="Local controller app for Fifine D6")
+    p.add_argument("--version", action="version", version=f"D6Deck {VERSION}")
     p.add_argument("command", choices=list(COMMANDS), nargs="?", default="ui",
                    help="what to do (no command = open the settings window)")
     p.add_argument("--debug", action="store_true", help="print raw packets")
