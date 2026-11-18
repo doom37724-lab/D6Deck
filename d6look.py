@@ -397,7 +397,7 @@ def finalize(img, cfg):
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
     img = img.rotate(cfg["image"].get("rotate", 90))
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=90)
+    img.save(buf, "JPEG", quality=90, subsampling=0)  # full colour detail: no colour smear at the edges
     return buf.getvalue()
 
 
@@ -415,7 +415,7 @@ def from_jpeg(data):
 
 def to_jpeg(img):
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, "JPEG", quality=90)
+    img.convert("RGB").save(buf, "JPEG", quality=90, subsampling=0)  # full colour detail: no colour smear at the edges
     return buf.getvalue()
 
 
@@ -1593,7 +1593,7 @@ class DemoLive:
         for i, y in enumerate(range(156, n, 12)):
             d.line([(0, y + i * 2), (n, y + i * 2)], fill=(255, 90, 160), width=2)
         buf = io.BytesIO()
-        sky.save(buf, "JPEG", quality=90)
+        sky.save(buf, "JPEG", quality=90, subsampling=0)  # full colour detail: no colour smear at the edges
         return buf.getvalue()
 
     def spotify(self):
