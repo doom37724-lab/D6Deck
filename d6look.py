@@ -396,9 +396,7 @@ def finalize(img, cfg):
     if cfg["image"].get("flip"):
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
     img = img.rotate(cfg["image"].get("rotate", 90))
-    buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=90, subsampling=0)  # full colour detail: no colour smear at the edges
-    return buf.getvalue()
+    return to_jpeg(img)
 
 
 def upright(jpeg, cfg):
@@ -410,12 +408,36 @@ def upright(jpeg, cfg):
 
 
 def from_jpeg(data):
-    return Image.open(io.BytesIO(data)).convert("RGB")
+    """A JPEG from to_jpeg() -> the picture, with the padding cut off again."""
+    img = Image.open(io.BytesIO(data))
+    note = img.info.get("comment", b"")
+    if note.startswith(b"d6size "):
+        w, h = (int(n) for n in note[7:].split(b"x"))
+        img = img.crop((0, 0, w, h))
+    return img.convert("RGB")
+
+
+JPEG_BLOCK = 16
 
 
 def to_jpeg(img):
+    """Encode a picture for the D6. The D6 draws a coloured line on a key whose picture isn't
+    a whole number of 16-pixel JPEG blocks (85 isn't), so it's padded out by copying its
+    right and bottom edges. The real size goes in the file so from_jpeg() can trim it back.
+    (Full colour detail - subsampling=0 - made the D6 draw a bigger line, so it's left off.)"""
+    img = img.convert("RGB")
+    w, h = img.size
+    W, H = -(-w // JPEG_BLOCK) * JPEG_BLOCK, -(-h // JPEG_BLOCK) * JPEG_BLOCK
+    if (W, H) != (w, h):
+        out = Image.new("RGB", (W, H))
+        out.paste(img, (0, 0))
+        if W > w:
+            out.paste(img.crop((w - 1, 0, w, h)).resize((W - w, h)), (w, 0))
+        if H > h:
+            out.paste(out.crop((0, h - 1, W, h)).resize((W, H - h)), (0, h))
+        img = out
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, "JPEG", quality=90, subsampling=0)  # full colour detail: no colour smear at the edges
+    img.save(buf, "JPEG", quality=90, comment=f"d6size {w}x{h}".encode())
     return buf.getvalue()
 
 
@@ -1593,7 +1615,7 @@ class DemoLive:
         for i, y in enumerate(range(156, n, 12)):
             d.line([(0, y + i * 2), (n, y + i * 2)], fill=(255, 90, 160), width=2)
         buf = io.BytesIO()
-        sky.save(buf, "JPEG", quality=90, subsampling=0)  # full colour detail: no colour smear at the edges
+        sky.save(buf, "JPEG", quality=90)
         return buf.getvalue()
 
     def spotify(self):
