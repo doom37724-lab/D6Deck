@@ -955,13 +955,6 @@ class Window:
                                      anchor="w", wraplength=380)
         self.s_saver_hint.pack(fill="x", pady=(8, 0))
         self.s_saver_hint.bind("<Configure>", lambda e: self.s_saver_hint.configure(wraplength=max(200, e.width - 4)))
-        self._label(right, "Picture when the PC is off", top=14)
-        self.s_off_pick = Btn(right, "Choose a picture for when the PC is off…", self.pick_offscreen)
-        self.s_off_pick.pack(anchor="w")
-        tk.Label(right, bg=PANEL, fg=MUTED, font=FONT["small"], justify="left", anchor="w", wraplength=380,
-                 text="Saved inside the D6 itself, so it shows even when D6Deck isn't running "
-                      "(for example after the PC shuts down and the D6 is unplugged and back in). "
-                      "Wide pictures work best.").pack(fill="x", pady=(8, 0))
 
     def _theme_columns(self, width):
         cols = max(1, min(len(self.theme_cards), width // 270))

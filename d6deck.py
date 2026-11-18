@@ -1420,6 +1420,10 @@ class Session:
     def save_offscreen(self):
         """Save the picture named in the request note into the D6's own memory."""
         result = "ok"
+        if not OFFSCREEN_ENABLED:
+            OFFSCREEN_PATH.unlink(missing_ok=True)
+            OFFSCREEN_DONE_PATH.write_text("error: this feature is turned off", encoding="utf-8")
+            return
         try:
             src = OFFSCREEN_PATH.read_text(encoding="utf-8").strip()
             OFFSCREEN_PATH.unlink(missing_ok=True)
@@ -2123,7 +2127,13 @@ class Host:
             return []
 
 
+OFFSCREEN_ENABLED = False  # 2026-11-18: a LOG write left a real D6 unable to boot. Do not re-enable.
+
+
 def save_offscreen_picture(src):
+    if not OFFSCREEN_ENABLED:
+        raise RuntimeError("turned off: saving a picture in the D6's memory stopped a D6 from "
+                           "starting up, so this feature is disabled")
     src = str(Path(src).resolve())
     from PIL import Image
     with Image.open(src) as img:  # fails early on something that isn't a picture
