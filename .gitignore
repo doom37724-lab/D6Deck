@@ -6,6 +6,8 @@ state.json
 d6deck.log
 d6deck.stop
 d6deck.reload
+d6deck.offscreen*
+d6deck.pretendoff
 screensaver.*
 
 # Exe build output

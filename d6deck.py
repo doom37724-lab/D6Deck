@@ -75,6 +75,10 @@ BUTTONS_PATH = BASE / "buttons.json"
 STATE_PATH = BASE / "state.json"
 STOP_PATH = BASE / "d6deck.stop"      # "please stop" note left by the stop command
 RELOAD_PATH = BASE / "d6deck.reload"  # "settings changed" note left by the settings app
+OFFSCREEN_PATH = BASE / "d6deck.offscreen"  # "save this picture in the D6" note (holds a path)
+PRETEND_OFF_PATH = BASE / "d6deck.pretendoff"  # test: act as if the PC is shutting down
+OFFSCREEN_DONE_PATH = BASE / "d6deck.offscreen.done"  # the answer: "ok" or "error: ..."
+OFFSCREEN_W, OFFSCREEN_H = 800, 480
 LOG_PATH = BASE / "d6deck.log"
 MUTEX_NAME = "Local\\d6deck_single_instance"
 
@@ -289,6 +293,28 @@ class Deck:
         """Put every picture sent so far on the screens."""
         self.cmd(b"STP")
 
+    def power_off(self):
+        """Tell the D6 the PC is going away (clear with the "DC" mark, then sleep), so it
+        doesn't sit frozen on the last picture. Any later command (wake) brings it back."""
+        self.cmd(b"CLE", b"\x00\x00\x44\x43")
+        self.cmd(b"HAN")
+
+    def set_offscreen(self, img):
+        """Save a full-screen picture in the D6's own memory: the picture it shows when it
+        powers up with no app running. 800x480, raw BGR, same turn as the key pictures."""
+        from PIL import Image, ImageOps
+        img = ImageOps.fit(img.convert("RGB"), (OFFSCREEN_W, OFFSCREEN_H), Image.LANCZOS)
+        img = img.rotate(self.cfg["image"].get("rotate", 180))
+        if self.cfg["image"].get("flip"):
+            img = ImageOps.mirror(img)
+        r, g, b = img.split()
+        data = Image.merge("RGB", (b, g, r)).tobytes()
+        size = len(data)  # 800 * 480 * 3 = 0x119400
+        self.cmd(b"LOG", size.to_bytes(4, "big") + b"\x01")
+        for i in range(0, size, PKT):
+            self._write(data[i:i + PKT])
+        self.show()
+
     @staticmethod
     def parse_event(data: bytes):
         """Return the raw key code on a key PRESS, else None.
@@ -302,6 +328,84 @@ class Deck:
             self.dev.close()
         except Exception:
             pass
+
+
+# ----------------------------------------------------------------- PC shutdown / sleep
+class PowerWatcher(threading.Thread):
+    """Listens for Windows shutting down, going to sleep and waking up (with a hidden window,
+    which is how Windows tells apps). The run loop picks the news up with take(); for
+    shutdown/sleep Windows is held for a moment until the D6 has been put to sleep."""
+
+    def __init__(self):
+        super().__init__(daemon=True, name="power")
+        self.pending = None
+        self.handled = threading.Event()
+
+    def tell(self, what, hold=0.0):
+        self.handled.clear()
+        self.pending = what
+        if hold:
+            self.handled.wait(hold)
+
+    def take(self):
+        what, self.pending = self.pending, None
+        return what
+
+    def done(self):
+        self.handled.set()
+
+    def run(self):
+        import ctypes
+        from ctypes import wintypes
+        u, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+        LRESULT = ctypes.c_ssize_t
+        WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+        u.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        u.DefWindowProcW.restype = LRESULT
+
+        def proc(hwnd, msg, wp, lp):
+            try:
+                if msg == 0x0011:  # WM_QUERYENDSESSION: Windows is about to shut down / log off
+                    self.tell("off", hold=3.0)
+                    return 1
+                if msg == 0x0016 and wp:  # WM_ENDSESSION: it really is
+                    self.tell("off", hold=3.0)
+                    return 0
+                if msg == 0x0218:  # WM_POWERBROADCAST
+                    if wp == 4:  # PBT_APMSUSPEND: going to sleep
+                        self.tell("off", hold=2.0)
+                    elif wp in (7, 0x12):  # woke up
+                        self.tell("on")
+                    return 1
+            except Exception:
+                pass
+            return u.DefWindowProcW(hwnd, msg, wp, lp)
+
+        class WNDCLASSW(ctypes.Structure):
+            _fields_ = [("style", wintypes.UINT), ("lpfnWndProc", WNDPROC), ("cbClsExtra", ctypes.c_int),
+                        ("cbWndExtra", ctypes.c_int), ("hInstance", wintypes.HINSTANCE),
+                        ("hIcon", wintypes.HICON), ("hCursor", wintypes.HANDLE),
+                        ("hbrBackground", wintypes.HBRUSH), ("lpszMenuName", wintypes.LPCWSTR),
+                        ("lpszClassName", wintypes.LPCWSTR)]
+
+        self._proc = WNDPROC(proc)  # keep it alive
+        wc = WNDCLASSW(lpfnWndProc=self._proc, lpszClassName="D6DeckPowerWatcher",
+                       hInstance=k32.GetModuleHandleW(None))
+        u.RegisterClassW(ctypes.byref(wc))
+        u.CreateWindowExW.restype = wintypes.HWND
+        # A real (hidden) window: "message-only" windows don't get the power messages.
+        hwnd = u.CreateWindowExW(0, "D6DeckPowerWatcher", "D6Deck", 0, 0, 0, 0, 0,
+                                 None, None, wc.hInstance, None)
+        if not hwnd:
+            log("Power watcher could not start")
+            return
+        msg = wintypes.MSG()
+        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            u.TranslateMessage(ctypes.byref(msg))
+            u.DispatchMessageW(ctypes.byref(msg))
+
+
+POWER = None  # the PowerWatcher, once the deck is running
 
 
 # ----------------------------------------------------------------- live data (Spotify, volume)
@@ -1167,6 +1271,7 @@ class Session:
         # pos -> [(due time, JPEG frame or None)], oldest first. None = the normal picture.
         self.anims = {}
         self.sleeping = False  # True after "Screen Off" (dark, or showing the screen saver)
+        self.dark = False  # True after the PC shut down / slept and the D6 was put to sleep
         self.saver = None      # the screen saver while it is showing
         self.game = None       # the game while one is being played
         self.armed_pos, self.armed_until = None, 0.0  # Quit needs a second press in time
@@ -1297,7 +1402,48 @@ class Session:
             log("Screens off")
         drain(self.deck, 0.3)  # so the Screen Off press itself can't wake it straight back up
 
+    def pc_going_off(self):
+        """Windows is shutting down or going to sleep: put the D6 to sleep properly, so it
+        doesn't freeze on the last picture. A key press (or the PC waking) brings it back."""
+        try:
+            self.anims.clear()
+            self.saver = None
+            self.game = None
+            self.sleeping = self.dark = True
+            self.deck.power_off()
+            self.screen.wiped()
+            log("PC shutting down or sleeping - D6 put to sleep")
+        finally:
+            if POWER:
+                POWER.done()
+
+    def save_offscreen(self):
+        """Save the picture named in the request note into the D6's own memory."""
+        result = "ok"
+        try:
+            src = OFFSCREEN_PATH.read_text(encoding="utf-8").strip()
+            OFFSCREEN_PATH.unlink(missing_ok=True)
+            from PIL import Image
+            with Image.open(src) as img:
+                img.seek(0)
+                self.deck.set_offscreen(img)
+            log(f"Saved off-screen picture in the D6: {src}")
+        except OSError:
+            raise
+        except Exception as e:
+            result = f"error: {e}"
+            log(f"Could not save off-screen picture: {e}")
+        OFFSCREEN_DONE_PATH.write_text(result, encoding="utf-8")
+        self.anims.clear()
+        self.screen.wiped()
+        if not self.sleeping:
+            self.deck.wake()
+            self.light_up()
+
     def wake_up(self):
+        if self.dark:
+            self.deck.wake()
+            self.dark = False
         if self.saver is not None:
             fade(self.deck, self.saver.brightness(), 0, 0.2, 4)
             self.saver = None
@@ -1483,6 +1629,16 @@ class Session:
                 return "stop"
             if RELOAD_PATH.exists():
                 self.reload()
+            news = POWER.take() if POWER else None
+            if PRETEND_OFF_PATH.exists():
+                PRETEND_OFF_PATH.unlink(missing_ok=True)
+                news = "off"
+            if news == "off":
+                self.pc_going_off()
+            elif news == "on" and self.dark:
+                self.wake_up()
+            if OFFSCREEN_PATH.exists():
+                self.save_offscreen()
             if self.game is not None:
                 wait = self.game.wait_ms
             elif self.saver is not None:
@@ -1568,7 +1724,12 @@ def cmd_run(cfg, args):
         return
     STOP_PATH.unlink(missing_ok=True)
     RELOAD_PATH.unlink(missing_ok=True)
+    PRETEND_OFF_PATH.unlink(missing_ok=True)
     log("d6deck started")
+    global POWER
+    if os.name == "nt" and POWER is None:
+        POWER = PowerWatcher()
+        POWER.start()
     live = Live(all_keys(cfg))
     announced_missing = False
     outcome = None
@@ -1950,11 +2111,60 @@ class Host:
         shutil.copy2(src, dest)
         return dest.name
 
+    def set_offscreen(self, src):
+        """Save a picture in the D6's own memory (shown when it powers up with no app).
+        Done by the running deck if there is one, else straight away. Raises on failure."""
+        return save_offscreen_picture(src)
+
     def log_tail(self, n=50):
         try:
             return LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]
         except OSError:
             return []
+
+
+def save_offscreen_picture(src):
+    src = str(Path(src).resolve())
+    from PIL import Image
+    with Image.open(src) as img:  # fails early on something that isn't a picture
+        img.verify()
+    if is_running():
+        OFFSCREEN_DONE_PATH.unlink(missing_ok=True)
+        OFFSCREEN_PATH.write_text(src, encoding="utf-8")
+        for _ in range(600):  # about 3 s of sending; give it up to a minute
+            if OFFSCREEN_DONE_PATH.exists():
+                answer = OFFSCREEN_DONE_PATH.read_text(encoding="utf-8")
+                OFFSCREEN_DONE_PATH.unlink(missing_ok=True)
+                if answer != "ok":
+                    raise RuntimeError(answer)
+                return
+            time.sleep(0.1)
+        OFFSCREEN_PATH.unlink(missing_ok=True)
+        raise RuntimeError("the deck didn't answer - is the D6 plugged in?")
+    deck = Deck(load_config())
+    try:
+        with Image.open(src) as img:
+            img.seek(0)
+            deck.set_offscreen(img)
+        log(f"Saved off-screen picture in the D6: {src}")
+    finally:
+        deck.close()
+
+
+def cmd_offscreen(cfg, args):
+    if not args.path:
+        sys.exit("Say which picture:  py -3.14 d6deck.py offscreen C:\\path\\to\\picture.png")
+    save_offscreen_picture(args.path)
+    print("Saved in the D6. It shows this picture when it starts up with no app running.")
+
+
+def cmd_pretend_off(cfg, args):
+    """Test the shutdown handling without shutting down: the running deck acts as if the
+    PC is going off. Press any key on the D6 to bring it back."""
+    if not is_running():
+        sys.exit("d6deck isn't running.")
+    PRETEND_OFF_PATH.write_text("off")
+    print("The D6 should go to sleep now. Press any key on it to wake it.")
 
 
 def cmd_ui(cfg, args):
@@ -1967,6 +2177,7 @@ COMMANDS = {
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop,
     "install-startup": cmd_install_startup, "remove-startup": cmd_remove_startup,
     "learn": cmd_learn, "test-screen": cmd_test_screen, "probe": cmd_probe,
+    "offscreen": cmd_offscreen, "pretend-off": cmd_pretend_off,
 }
 
 
@@ -1979,6 +2190,7 @@ def main():
                    help="probe: send wake-up + test images first")
     p.add_argument("--wait", action="store_true",
                    help="run: wait for an old copy to finish (used by restart)")
+    p.add_argument("path", nargs="?", help="offscreen: the picture to save in the D6")
     args = p.parse_args()
     cfg = load_config()
     try:

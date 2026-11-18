@@ -955,6 +955,13 @@ class Window:
                                      anchor="w", wraplength=380)
         self.s_saver_hint.pack(fill="x", pady=(8, 0))
         self.s_saver_hint.bind("<Configure>", lambda e: self.s_saver_hint.configure(wraplength=max(200, e.width - 4)))
+        self._label(right, "Picture when the PC is off", top=14)
+        self.s_off_pick = Btn(right, "Choose a picture for when the PC is off…", self.pick_offscreen)
+        self.s_off_pick.pack(anchor="w")
+        tk.Label(right, bg=PANEL, fg=MUTED, font=FONT["small"], justify="left", anchor="w", wraplength=380,
+                 text="Saved inside the D6 itself, so it shows even when D6Deck isn't running "
+                      "(for example after the PC shuts down and the D6 is unplugged and back in). "
+                      "Wide pictures work best.").pack(fill="x", pady=(8, 0))
 
     def _theme_columns(self, width):
         cols = max(1, min(len(self.theme_cards), width // 270))
@@ -2235,6 +2242,20 @@ class Window:
                                           filetypes=[("Pictures and GIFs", " ".join("*" + e for e in SAVER_TYPES))])
         if path:
             self._saver_done(lambda: self.core.set_saver(path), "Your picture is now the screen saver.")
+
+    def pick_offscreen(self):
+        path = filedialog.askopenfilename(parent=self.root, title="Choose a picture for when the PC is off",
+                                          filetypes=[("Pictures", "*.png *.jpg *.jpeg *.webp *.bmp *.gif")])
+        if not path:
+            return
+        self.toast("Saving the picture in the D6… (a few seconds)")
+
+        def work():
+            try:
+                self.host.set_offscreen(path)
+            except Exception as e:
+                raise Problem(f"The D6 couldn't save that picture: {e}")
+        self.errand(work, lambda _: self.toast("Saved in the D6. It shows when the PC is off.", "good"))
 
     def remove_saver(self):
         if self.ask("Remove your picture?", "The screen saver goes back to the built-in styles.", "Remove", True):
