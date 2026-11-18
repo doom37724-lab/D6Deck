@@ -1005,7 +1005,11 @@ GAME_MODE_KEEP = {
     # Claude, so work it's in the middle of isn't cut off
     "claude.exe",
 }
-GAME_MODE_MIN_MB = 300
+GAME_MODE_MIN_MB = 150
+# Background apps that hide in the tray and hold memory (or graphics memory) - Game mode
+# quits these fully, even with no window. LM Studio keeps its AI model in the graphics card.
+# Nothing here holds unsaved work. A key can add more with "also": ["app.exe", ...].
+GAME_MODE_QUIT = {"lm studio.exe", "llama-server.exe", "curseforge.exe", "curse.agent.host.exe"}
 
 
 def _process_memory_mb():
@@ -1075,25 +1079,33 @@ def game_mode_targets(a=None):
     a = a or {}
     keep = GAME_MODE_KEEP | {str(x).lower() for x in a.get("keep", [])}
     min_mb = float(a.get("min_mb", GAME_MODE_MIN_MB))
+    quit_these = (GAME_MODE_QUIT | {str(x).lower() for x in a.get("also", [])}) - keep
     mem = _process_memory_mb()
     hits = [(exe, mem.get(exe, 0), wins) for exe, wins in _app_windows().items()
-            if exe not in keep and mem.get(exe, 0) >= min_mb]
+            if exe not in keep and exe not in quit_these and mem.get(exe, 0) >= min_mb]
+    hits += [(exe, mem[exe], None) for exe in quit_these if exe in mem]  # None = quit fully
     return sorted(hits, key=lambda h: -h[1])
 
 
 def game_mode(a=None):
-    """Politely close the memory-hungry apps. Returns how many apps were asked to close."""
+    """Close the memory-hungry apps. Returns how many apps were closed."""
     if os.name != "nt":
         raise RuntimeError("only works on Windows")
     import ctypes
     targets = game_mode_targets(a)
     for exe, mb, wins in targets:
-        for hwnd in wins:
-            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE = clicking the X
-        log(f"Game mode: closing {exe} ({mb:.0f} MB)")
+        if wins is None:  # a tray app: end it and everything it started
+            subprocess.run(["taskkill", "/F", "/T", "/IM", exe], capture_output=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            log(f"Game mode: quit {exe} ({mb:.0f} MB)")
+        else:
+            for hwnd in wins:
+                ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE = clicking the X
+            log(f"Game mode: closing {exe} ({mb:.0f} MB)")
     if not targets:
         log("Game mode: nothing big to close")
-    return len(targets)
+    # llama-server is counted with LM Studio, so don't show it as a second app
+    return len({"lm studio.exe" if e == "llama-server.exe" else e for e, _, _ in targets})
 
 
 def run_action(a, live):

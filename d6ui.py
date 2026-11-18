@@ -2052,9 +2052,10 @@ class Window:
         elif t == "quit":
             self._hint(box, "The deck asks for a second press, so you cannot quit by accident.")
         elif t == "game_mode":
-            self._hint(box, "Press twice. Closes open apps using over 300 MB of memory, the same way as "
-                            "clicking their X, so anything unsaved still asks first. Never closes Steam, "
-                            "Discord, Spotify, game launchers, OBS or Windows itself.")
+            self._hint(box, "Press twice. Closes open apps using over 150 MB of memory, the same way as "
+                            "clicking their X, so anything unsaved still asks first. Also fully quits "
+                            "LM Studio (frees its AI model from the graphics card) and CurseForge. "
+                            "Never closes Steam, Discord, Spotify, game launchers, OBS, Claude or Windows.")
         elif t == "stopwatch":
             self._hint(box, "Goes well with the “Stopwatch” live info key.")
         else:
