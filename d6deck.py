@@ -1424,25 +1424,33 @@ class Session:
             OFFSCREEN_PATH.unlink(missing_ok=True)
             OFFSCREEN_DONE_PATH.write_text("error: this feature is turned off", encoding="utf-8")
             return
-        try:
+        from PIL import Image
+        try:  # check the picture first; a problem with the file must not look like a lost D6
             src = OFFSCREEN_PATH.read_text(encoding="utf-8").strip()
             OFFSCREEN_PATH.unlink(missing_ok=True)
-            from PIL import Image
+            check_offscreen_picture(src)
             with Image.open(src) as img:
-                img.seek(0)
-                self.deck.set_offscreen(img)
-            log(f"Saved off-screen picture in the D6: {src}")
-        except OSError:
-            raise
+                img.load()
+                pic = img.copy()
         except Exception as e:
-            result = f"error: {e}"
+            OFFSCREEN_DONE_PATH.write_text(f"error: {e}", encoding="utf-8")
             log(f"Could not save off-screen picture: {e}")
-        OFFSCREEN_DONE_PATH.write_text(result, encoding="utf-8")
+            return
+        # Quiet first: no animations, screen saver or game talking to the D6 while it stores.
         self.anims.clear()
+        self.saver = None
+        self.game = None
+        self.deck.brightness(0)
+        self.deck.set_offscreen(pic)
+        log(f"Saved off-screen picture in the D6: {src} - letting it rest")
+        time.sleep(OFFSCREEN_REST_SECONDS)  # nothing else is sent until it has finished storing
+        drain(self.deck, 0.2)
+        OFFSCREEN_DONE_PATH.write_text(result, encoding="utf-8")
         self.screen.wiped()
-        if not self.sleeping:
-            self.deck.wake()
-            self.light_up()
+        self.dark = False
+        self.sleeping = False
+        self.deck.wake()
+        self.light_up(first=True)
 
     def wake_up(self):
         if self.dark:
@@ -2127,21 +2135,39 @@ class Host:
             return []
 
 
-OFFSCREEN_ENABLED = False  # 2026-11-18: a LOG write left a real D6 unable to boot. Do not re-enable.
+# 2026-11-18: after a write the D6 once stayed black and off USB for ~2 minutes, then came
+# back. Since then: still pictures only, and the D6 is left alone for a while afterwards.
+OFFSCREEN_ENABLED = True
+OFFSCREEN_TYPES = {".png", ".jpg", ".jpeg", ".bmp"}
+OFFSCREEN_REST_SECONDS = 8  # no traffic to the D6 for this long after saving
+
+
+def check_offscreen_picture(src):
+    """Raise ValueError unless src is a single still picture we're happy to save in the D6."""
+    from PIL import Image
+    if Path(src).suffix.lower() not in OFFSCREEN_TYPES:
+        raise ValueError("only still pictures (PNG, JPG or BMP) - no GIFs or animations")
+    try:
+        with Image.open(src) as img:
+            if getattr(img, "n_frames", 1) > 1 or getattr(img, "is_animated", False):
+                raise ValueError("that picture is animated - please pick a still one")
+            img.verify()
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError("that picture couldn't be opened")
 
 
 def save_offscreen_picture(src):
     if not OFFSCREEN_ENABLED:
-        raise RuntimeError("turned off: saving a picture in the D6's memory stopped a D6 from "
-                           "starting up, so this feature is disabled")
+        raise RuntimeError("this feature is turned off")
     src = str(Path(src).resolve())
+    check_offscreen_picture(src)
     from PIL import Image
-    with Image.open(src) as img:  # fails early on something that isn't a picture
-        img.verify()
     if is_running():
         OFFSCREEN_DONE_PATH.unlink(missing_ok=True)
         OFFSCREEN_PATH.write_text(src, encoding="utf-8")
-        for _ in range(600):  # about 3 s of sending; give it up to a minute
+        for _ in range(900):  # ~3 s of sending + the rest; give it up to 90 s
             if OFFSCREEN_DONE_PATH.exists():
                 answer = OFFSCREEN_DONE_PATH.read_text(encoding="utf-8")
                 OFFSCREEN_DONE_PATH.unlink(missing_ok=True)
@@ -2154,9 +2180,9 @@ def save_offscreen_picture(src):
     deck = Deck(load_config())
     try:
         with Image.open(src) as img:
-            img.seek(0)
             deck.set_offscreen(img)
         log(f"Saved off-screen picture in the D6: {src}")
+        time.sleep(OFFSCREEN_REST_SECONDS)  # let it finish storing before anything else talks to it
     finally:
         deck.close()
 

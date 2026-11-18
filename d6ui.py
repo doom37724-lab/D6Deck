@@ -955,6 +955,13 @@ class Window:
                                      anchor="w", wraplength=380)
         self.s_saver_hint.pack(fill="x", pady=(8, 0))
         self.s_saver_hint.bind("<Configure>", lambda e: self.s_saver_hint.configure(wraplength=max(200, e.width - 4)))
+        self._label(right, "Picture when the PC is off", top=14)
+        self.s_off_pick = Btn(right, "Choose a picture for when the PC is off…", self.pick_offscreen)
+        self.s_off_pick.pack(anchor="w")
+        tk.Label(right, bg=PANEL, fg=MUTED, font=FONT["small"], justify="left", anchor="w", wraplength=380,
+                 text="Saved inside the D6 itself, so it shows even when D6Deck isn't running. "
+                      "Still pictures only (PNG, JPG or BMP), no GIFs. Wide pictures work best.").pack(
+            fill="x", pady=(8, 0))
 
     def _theme_columns(self, width):
         cols = max(1, min(len(self.theme_cards), width // 270))
@@ -2238,10 +2245,15 @@ class Window:
 
     def pick_offscreen(self):
         path = filedialog.askopenfilename(parent=self.root, title="Choose a picture for when the PC is off",
-                                          filetypes=[("Pictures", "*.png *.jpg *.jpeg *.webp *.bmp *.gif")])
+                                          filetypes=[("Still pictures", "*.png *.jpg *.jpeg *.bmp")])
         if not path:
             return
-        self.toast("Saving the picture in the D6… (a few seconds)")
+        if not self.ask("Save this picture in the D6?",
+                        "The keys go dark for about 10 seconds while it saves. Don't unplug the D6 "
+                        "during that time. If it ever stays black afterwards, give it a couple of "
+                        "minutes - it has come back on its own before.", "Save it"):
+            return
+        self.toast("Saving the picture in the D6… (about 10 seconds - don't unplug it)")
 
         def work():
             try:
