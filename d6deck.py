@@ -989,6 +989,113 @@ def spotify_like():
             focus_window(prev)
 
 
+# ------------------------------------------------------------------ Game mode
+# Closes the open apps that use a lot of memory, the polite way (like clicking their X),
+# so an app with unsaved work still asks "Save?". Apps on this list are never closed;
+# a key can add more with "keep": ["app.exe", ...] and change the size limit with "min_mb".
+GAME_MODE_KEEP = {
+    # Windows itself and this app
+    "explorer.exe", "dwm.exe", "taskmgr.exe", "python.exe", "pythonw.exe", "py.exe",
+    "d6deck.exe", "searchhost.exe", "startmenuexperiencehost.exe", "shellexperiencehost.exe",
+    "textinputhost.exe", "applicationframehost.exe", "systemsettings.exe",
+    # game launchers, voice chat, music and streaming
+    "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "battle.net.exe",
+    "eadesktop.exe", "ubisoftconnect.exe", "upc.exe", "galaxyclient.exe", "riotclientservices.exe",
+    "xboxpcapp.exe", "gamebar.exe", "discord.exe", "spotify.exe", "obs64.exe", "medal.exe",
+    # Claude, so work it's in the middle of isn't cut off
+    "claude.exe",
+}
+GAME_MODE_MIN_MB = 300
+
+
+def _process_memory_mb():
+    """{exe name: total MB of memory in use} for every process we're allowed to look at."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PMC(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+            (n, ctypes.c_size_t) for n in ("PeakWorkingSetSize", "WorkingSetSize",
+                                           "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage",
+                                           "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage",
+                                           "PagefileUsage", "PeakPagefileUsage", "PrivateUsage")]
+
+    k32 = ctypes.windll.kernel32
+    psapi = ctypes.windll.psapi
+    pids = (wintypes.DWORD * 4096)()
+    got = wintypes.DWORD()
+    psapi.EnumProcesses(pids, ctypes.sizeof(pids), ctypes.byref(got))
+    totals = {}
+    for pid in pids[:got.value // ctypes.sizeof(wintypes.DWORD)]:
+        h = k32.OpenProcess(0x1000 | 0x0010, False, pid)  # query limited info + read memory
+        if not h:
+            continue
+        try:
+            buf, n = ctypes.create_unicode_buffer(520), wintypes.DWORD(520)
+            if not k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                continue
+            pmc = PMC()
+            pmc.cb = ctypes.sizeof(PMC)
+            if psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), pmc.cb):
+                name = os.path.basename(buf.value).lower()
+                totals[name] = totals.get(name, 0) + pmc.PrivateUsage / 1048576
+        finally:
+            k32.CloseHandle(h)
+    return totals
+
+
+def _app_windows():
+    """{exe name: [window handles]} for the normal app windows on screen or in the taskbar."""
+    import ctypes
+    from ctypes import wintypes
+    u, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+    found = {}
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        if u.IsWindowVisible(hwnd) and u.GetWindowTextLengthW(hwnd) > 0 and not u.GetWindow(hwnd, 4):
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            h = k32.OpenProcess(0x1000, False, pid.value)
+            if h:
+                try:
+                    buf, n = ctypes.create_unicode_buffer(520), wintypes.DWORD(520)
+                    if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                        found.setdefault(os.path.basename(buf.value).lower(), []).append(hwnd)
+                finally:
+                    k32.CloseHandle(h)
+        return True
+
+    u.EnumWindows(each, 0)
+    return found
+
+
+def game_mode_targets(a=None):
+    """[(exe name, MB, [windows])] that Game mode would close, biggest first."""
+    a = a or {}
+    keep = GAME_MODE_KEEP | {str(x).lower() for x in a.get("keep", [])}
+    min_mb = float(a.get("min_mb", GAME_MODE_MIN_MB))
+    mem = _process_memory_mb()
+    hits = [(exe, mem.get(exe, 0), wins) for exe, wins in _app_windows().items()
+            if exe not in keep and mem.get(exe, 0) >= min_mb]
+    return sorted(hits, key=lambda h: -h[1])
+
+
+def game_mode(a=None):
+    """Politely close the memory-hungry apps. Returns how many apps were asked to close."""
+    if os.name != "nt":
+        raise RuntimeError("only works on Windows")
+    import ctypes
+    targets = game_mode_targets(a)
+    for exe, mb, wins in targets:
+        for hwnd in wins:
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE = clicking the X
+        log(f"Game mode: closing {exe} ({mb:.0f} MB)")
+    if not targets:
+        log("Game mode: nothing big to close")
+    return len(targets)
+
+
 def run_action(a, live):
     t = a.get("type")
     if t == "volume":
@@ -1023,6 +1130,7 @@ def change_brightness(deck, cfg, delta):
 
 # ----------------------------------------------------------------- run loop
 QUIT_CONFIRM_SECONDS = 3
+CONFIRM_TYPES = {"quit", "game_mode"}  # keys that need a second press
 CROSSFADE_WIDGETS = {"spotify_cover", "spotify_title", "clock"}  # fade smoothly when they change
 
 
@@ -1239,15 +1347,19 @@ class Session:
             return None
         a = k.get("action") or {}
         t = a.get("type")
-        if t != "quit":
+        if t not in CONFIRM_TYPES:
             self.play_press(pos)
         if not a:
             return None
 
-        if t == "quit":
+        if t in CONFIRM_TYPES:  # these need a second press in time, so no accidents
             if self.armed_pos == pos and time.monotonic() <= self.armed_until:
-                log("Quit pressed on the deck")
-                return "quit"
+                self.armed_pos = None
+                if t == "quit":
+                    log("Quit pressed on the deck")
+                    return "quit"
+                self.run_game_mode(pos, k, a)
+                return None
             self.armed_pos, self.armed_until = pos, time.monotonic() + QUIT_CONFIRM_SECONDS
             self.flash(pos, self.relabeled(k, "Press again", "#d1242f"), QUIT_CONFIRM_SECONDS)
             return None
@@ -1312,6 +1424,16 @@ class Session:
             sw["elapsed"] = 0.0
         else:
             sw.update(running=True, since=time.monotonic())
+
+    def run_game_mode(self, pos, k, a):
+        try:
+            n = game_mode(a)
+        except Exception as e:
+            log(f"Game mode failed: {e}")
+            self.flash(pos, self.relabeled(k, "Failed", "#555555"), 1.5)
+            return
+        word = f"Closed {n}" if n else "All clear"
+        self.flash(pos, self.relabeled(k, word, "#1a7f37"), 2.0)
 
     def play_toy(self, pos, name):
         try:

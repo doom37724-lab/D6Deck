@@ -70,6 +70,7 @@ ACTIONS = [
     ("stopwatch", "Start / pause / reset the stopwatch"),
     ("game", "Play a mini-game"),
     ("toy", "Roll a die, flip a coin, ask the 8-ball"),
+    ("game_mode", "Game mode: close memory-hungry apps"),
     ("command", "Run a command (advanced)"),
     ("restart", "Restart D6Deck"),
     ("quit", "Quit D6Deck"),
@@ -2050,6 +2051,10 @@ class Window:
             self._hint(box, "Turns the key screens off. Press any key to wake the deck up again.")
         elif t == "quit":
             self._hint(box, "The deck asks for a second press, so you cannot quit by accident.")
+        elif t == "game_mode":
+            self._hint(box, "Press twice. Closes open apps using over 300 MB of memory, the same way as "
+                            "clicking their X, so anything unsaved still asks first. Never closes Steam, "
+                            "Discord, Spotify, game launchers, OBS or Windows itself.")
         elif t == "stopwatch":
             self._hint(box, "Goes well with the “Stopwatch” live info key.")
         else:

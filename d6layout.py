@@ -119,6 +119,8 @@ PAGE4 = {
     "7": {"label": "Inbox", "icon": "mail", "color": "#3a4a8c",
           "action": {"type": "obsidian", "do": "inbox"}},
     "8": PAGE_KEY,
+    "9": {"label": "Game Mode", "icon": "gamepad", "color": "#b42318",
+          "action": {"type": "game_mode"}},
 }
 
 PAGES = [PAGE1, PAGE2, PAGE3, PAGE4]
